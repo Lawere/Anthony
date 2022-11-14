@@ -1,3 +1,29 @@
+Version 1.3.6
+=============
+21-10-26
+• https://github.com/vz-risk/veris/issues/403 - change 'aquire' to 'acquire' in value_chain definition
+• https://github.com/vz-risk/veris/issues/406 - Added schema_name field.
+• https://github.com/vz-risk/veris/issues/402 - Updated Programming error definition
+• https://github.com/vz-risk/veris/issues/385 - Added 'Evasion' enumeration in 'Hacking' and 'Malware'
+• https://github.com/vz-risk/veris/issues/376 - Improved Phishing & Pretexting definitions.
+• https://github.com/vz-risk/veris/issues/374 - Add 'Other network service' hackking vector
+• https://github.com/vz-risk/veris/issues/373 - Add 'Offboarding' to internal discovery variety.
+• https://github.com/vz-risk/veris/issues/369 - Attempted to fix typos. May require editing the webapp.
+• https://github.com/vz-risk/veris/issues/310 - Updated actor definitions.
+• https://github.com/vz-risk/veris/issues/280 - Updated physical in value_chain
+• https://github.com/vz-risk/veris/issues/180 - Updated checkValidity to check victim.region
+• https://github.com/vz-risk/veris/issues/271 - if action.malware.variety.DoS -> actor.*.motive.Secondary
+• https://github.com/vz-risk/veris/issues/383 - Clarify Backdoor and C2. In general, hacking can provide a backdoor. Malware can provide a backdoor or C2. Malware can _use_ C2 and hacking can _use_ a backdoor.
+• https://github.com/vz-risk/veris/issues/386 - action.hacking.variety.HTTP Response Splitting -> action.hacking.variety.HTTP response splitting
+• https://github.com/vz-risk/veris/issues/401 - action.social.vector.Website -> action.social.vector.Web application (consistent with other actions)
+• https://github.com/vz-risk/veris/issues/405 - plus.analysis_status.Needs review -> plus.analysis_status.Ready for review (VCDB & convert_1.3.5_to_1.3.6.py)
+• https://github.com/vz-risk/veris/issues/407 - Added update, rules.py, and validation rule to throw an derror if victim.secondary.victim_id is populated but not victim.secondary.amount
+• https://github.com/vz-risk/veris/issues/404 - Noted that victim.secondary, action.hacking.vector.Secondary, and value_chain.distribution.variety.Secondary indicate a supply chain breach
+• https://github.com/vz-risk/veris/issues/315 - Updated hacking and malware varieties to be consistent
+• https://github.com/vz-risk/veris/issues/400 - Infer value chain values.
+
+
+
 Version 1.3.5
 =============
 20-12-01

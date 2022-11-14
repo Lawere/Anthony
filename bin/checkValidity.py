@@ -149,6 +149,123 @@ def checkMisuseActor(inDict):
         yield ValidationError("Misuse in action, but no internal or partner actor defined.  Per VERIS issue #229, there should always be an internal or partner actor if there is a misuse action.")
 
 
+### Validate victim region field
+### VERIS issue #180
+def checkRegion(inDict):
+    regions = {
+        "002": ["011", "014", "017", "018", "015", "000"], # Africa
+        "010": ["000"], # Antarctica
+        "019": ["021", "005", "013", "029", "419", "000"], # America
+        "419": ["005", "013", "029"], # Latin America and Caribbean 
+        "142": ["030", "034", "035", "143", "145", "000"], # Asia
+        "150": ["039", "151", "154", "830", "155", "000"], # Europe
+        "009": ["053", "054", "057", "061", "000"], # Oceania
+        "000": ["000"] # Unknown
+    }
+    non_used_regions = {
+        "001": "000", # world
+        "020": "002", # sub-saharan africa
+        "003": "019" # americas"
+    }
+
+    for region in inDict.get('victim', {}).get('region', []):
+        if type(region) != str or len(region) != 6:
+            yield ValidationError("Victim.region {0} is not a six character string.".format(region))
+        else:
+            super_region = region[:3]
+            sub_region = region[3:]
+            if super_region in non_used_regions.keys():
+                yield ValidationError("Region {2} is incorrect. Replace first half of victim.region ('{0}') with '{1}'.".format(super_region, non_used_regions[super_region], region))
+#            elif sub_region in non_used_regions.keys():
+#                yield ValidationError("Region {1} is incorrect. Replace second half of victim.region ('{0}') with '000' unless you know the correct region.".format(sub_region, region))
+            elif sub_region not in regions.get(super_region, []):
+                error_text = "victim.region second half, ('{0}') does not match first half '{1}'".format(sub_region, super_region)
+                if super_region in regions:
+                    error_text += "  Please replace the second half with one of {0}.".format(", ".join(regions[super_region]))
+                else:
+                    error_text += "  Since {0} is not a super region, please check the whole region.".format(super_region)
+                yield ValidationError(error_text)
+
+
+### Validate that secondary.victim.amount is > 0 if victim.secondary.victim_id is not empty
+### VERIS issue #407
+def checkSecondaryVictimAmount(inDict):
+    secondary_victims = inDict.get('victim', {}).get('secondary', {}).get('victim_id', [])
+    secondary_victim_amount = inDict.get('victim', {}).get('secondary', {}).get('amount', 0)
+    if len(secondary_victims) > secondary_victim_amount:
+        yield ValidationError("victim.secondary.victim_id lists {0} victims, however victim.secondary.amount is less or missing. Check that the amount is correct.  The amount should be the number of known victims (even if unknown victims may exist.)".format(len(secondary_victims)))
+
+
+### Check value_chain enumerations that are likely based on actions taken
+### VERIS issue #400
+def checkValueChain(inDict):
+    any_value_chain_recommendation = False
+    ### Check enrichments from rules.py
+    if 'Phishing' in inDict['action'].get('social', {}).get('variety', []):
+        if "Email" not in inDict.get('value_chain', {}).get('development', {}).get('variety', []):
+            yield ValidationError("Because incident includes 'action.social.variety.Phishing', 'value_chain.deveopment.variety.Email' should also. Please update.")
+        if "Email addresses" not in inDict.get('value_chain', {}).get('targeting', {}).get('variety', []):
+            yield ValidationError("Because incident includes 'action.social.variety.Phishing', 'value_chain.targeting.variety.Email addresses' should also. Please update.")
+    if 'C2' in inDict['action'].get('malware', {}).get('vector', []) and "C2" not in inDict.get('value_chain', {}).get('non-distribution services', {}).get('variety', []):
+        yield ValidationError("Because there is action.malware.variety.C2, value_chain.non-distribution services.variety.C2 should also.  Please update.")
+    if 'Ransomware' in inDict['action'].get('malware', {}).get('variety', []):
+        if "Cryptocurrency" not in inDict.get('value_chain', {}).get('cash-out', {}).get('variety', []):
+            yield ValidationError("Because there is action.malware.variety.Ransomware, value_chain.cash-out.variety.Cryptocurrency should also.  Please update.")
+        # note: this is a recommendation, not enrichment
+        if "Ransomware" not in inDict.get('value_chain', {}).get('development', {}).get('variety', []):
+            yield ValidationError("Because there is action.malware.variety.Ransomware, consider adding value_chain.distribution.variety.Ransomware.")
+            any_value_chain_recommendation = True
+### This is recommend only
+#    if 'Trojan' in inDict['action'].get('malware', {}).get('variety', []) and "Trojan" not in inDict.get('value_chain', {}).get('development', {}).get('variety', []):
+#        yield ValidationError("Because there is action.malware.variety.Trojan, value_chain.development.variety.Trojan should also.  Please update.")
+    if 'Email' in inDict['action'].get('social', {}).get('vector', []):
+        if "Email" not in inDict.get('value_chain', {}).get('distribution', {}).get('variety', []):
+            yield ValidationError("Because there is action.social.variety.Email, value_chain.distribution.variety.Email should also.  Please update.")
+        # note: this is a recommendation, not enrichment
+        if "Email addresses" not in inDict.get('value_chain', {}).get('targeting', {}).get('variety', []):
+            yield ValidationError("Because there is action.social.variety.Email addresses, consider adding value_chain.targeting.variety.Email.")
+            any_value_chain_recommendation = True
+
+    ### Recommended Only
+    if ('malware' in inDict['action'].keys()) & (len(inDict.get('value_chain', {}).get('development', {}).get('variety', [])) == 0):
+        yield ValidationError("Because there is a malware action, consider adding a value_chain development variety, even if it is 'Unknown'.")
+        any_value_chain_recommendation = True
+    if 'Trojan' in inDict['action'].get('malware', {}).get('variety', []) and "Trojan" not in inDict.get('value_chain', {}).get('development', {}).get('variety', []):
+        yield ValidationError("Because there is action.malware.variety.Trojan, consider adding value_chain.development.variety.Trojan.")
+        any_value_chain_recommendation = True
+    if 'Pretexting' in inDict['action'].get('social', {}).get('variety', []) and "Persona" not in inDict.get('value_chain', {}).get('development', {}).get('variety', []):
+        yield ValidationError("Because there is action.social.variety.Pretexting, consider adding value_chain.development.variety.Persona.")
+        any_value_chain_recommendation = True
+    if 'Use of stolen creds' in inDict['action'].get('hacking', {}).get('variety', []) and "Lost or stolen credentials" not in inDict.get('value_chain', {}).get('targeting', {}).get('variety', []):
+        yield ValidationError("Because there is action.hacking.variety.Use of stolen creds, consider adding value_chain.targeting.variety.Lost or stolen credentials, but only if the creds are the beginning of the attack and not stolen mid attack.")
+        any_value_chain_recommendation = True
+    if 'Exploit vuln' in inDict['action'].get('hacking', {}).get('variety', []):
+        if "Vulnerabilities" not in inDict.get('value_chain', {}).get('targeting', {}).get('variety', []):
+            yield ValidationError("Because there is action.hacking.variety.Exploit vuln, consider adding value_chain.targeting.variety.Vulnerabilities.")
+            any_value_chain_recommendation = True
+        if "Exploit" not in inDict.get('value_chain', {}).get('development', {}).get('variety', []):
+            yield ValidationError("Because there is action.hacking.variety.Exploit vuln, consider adding value_chain.development.variety.Exploit.")
+            any_value_chain_recommendation = True
+    if 'Downloader' in inDict['action'].get('malware', {}).get('variety', []) and "Loader" not in inDict.get('value_chain', {}).get('distribution', {}).get('variety', []):
+        yield ValidationError("Because there is action.malware.variety.Downloader, consider adding value_chain.distribution.variety.Loader.")
+        any_value_chain_recommendation = True
+    if 'Exploit misconfig' in inDict['action'].get('hacking', {}).get('variety', []) and "Misconfigurations" not in inDict.get('value_chain', {}).get('targeting', {}).get('variety', []):
+        yield ValidationError("Because there is action.hacking.variety.Exploit misconfig, consider adding value_chain.targeting.variety.Misconfigurations.")
+        any_value_chain_recommendation = True
+    if 'Exploit misconfig' in inDict['action'].get('malware', {}).get('variety', []) and "Misconfigurations" not in inDict.get('value_chain', {}).get('targeting', {}).get('variety', []):
+        yield ValidationError("Because there is action.malware.variety.Exploit misconfig, consider adding value_chain.targeting.variety.Misconfigurations.")
+        any_value_chain_recommendation = True
+    if 'Web application' in inDict['action'].get('malware', {}).get('vector', []) and "Website" not in inDict.get('value_chain', {}).get('development', {}).get('variety', []):
+        yield ValidationError("Because there is action.malware.vector.Web application, consider adding value_chain.development.variety.Website.")
+        any_value_chain_recommendation = True
+    if 'Web application' in inDict['action'].get('social', {}).get('vector', []) and "Website" not in inDict.get('value_chain', {}).get('development', {}).get('variety', []):
+        yield ValidationError("Because there is action.social.vector.Web application, consider adding value_chain.development.variety.Website.")
+        any_value_chain_recommendation = True
+    if any_value_chain_recommendation:
+        yield ValidationError("Some value_chain changes are recommendations only.  This could be for one of three reasons: The actor could have gotten it free.  The actor could have obtained it during the incident (e.g. creds).  Website describes building a full website, not just uploading a file or such.  Please take these into account when updating the incident.")
+
+
+
 def main(incident):
   for e in checkMalwareIntegrity(incident):
     yield e
@@ -170,6 +287,14 @@ def main(incident):
     yield e
   for e in checkDataTotal(incident):
     yield e
+# Added with 1.3.6    
+  for e in checkRegion(incident):
+    yield e
+  for e in checkSecondaryVictimAmount(incident):
+    yield e
+  for e in checkValueChain(incident):
+    yield e
+
 
 if __name__ == '__main__':
     # TODO: implement config file options for all of these

@@ -523,7 +523,7 @@ class Rules():
         # if the secondary victim has no additional information then add a note
         # about that.
         if 'secondary' in incident['victim'] and len(incident['victim'].get('secondary', {})) == 0:
-          incident['victim']['secondary']['notes'] = "No additional information."
+          incident['victim']['secondary']['notes'] = (incident['victim']['secondary'].get("notes", ""), "\nNo additional information.").strip()
           logging.info("Secondary victim, but no additional info so adding victim.secondary.notes to document it.")
 
         # If the hacking vector was "web application", add S - Web Application to "asset.assets"
@@ -585,6 +585,172 @@ class Rules():
         # Try to fix capitalization inconsistencies in source_id
         if 'source_id' in incident:
             incident['source_id'] = incident['source_id'].lower()
+
+
+        ## added with 1.3.6
+
+        # Per https://github.com/vz-risk/veris/issues/271
+        # infer actor.*.motive.Secondary if malware.variety.DoS
+        if 'DoS' in incident['action'].get('malware', {}).get('variety', []) and LooseVersion(incident['schema_version']) >= LooseVersion("1.3.6"):
+            actors = incident['actor'].keys()
+            if 'external' in actors:
+                actors = "external"
+            elif 'partner' in actors:
+                actors = "partner"
+            elif 'internal' in actors:
+                actors = "internal"
+            else:
+                actors = "unknown"
+            if actors != "unknown":
+                motive = incident['actor'][actors].get('motive', [])
+                if 'Secondary' not in motive:
+                    if ('Unknown' in motive) & (len(motive) == 1): # if the only motive is 'Unknown', remove it to replace with Secondary
+                        motive.remove('Unknown')
+                    motive.append('Secondary')
+                    incident['actor'][actors]['motive'] = motive
+                    notes = incident['actor'][actors].get('notes', '')
+                    notes = notes + "\n" + "VERIS 1.3.6: actor.{0}.motive.Secondary added because action.malware.variety.DoS exists.".format(actors)
+                    incident['actor'][actors]['notes'] = notes.strip()
+
+        ### Hierarchical Field
+        # Added v1.3.6
+        # `action.malware.variety.Backdoor or C2` is a parent of `action.malware.variety.Backdoor` and `action.malware.variety.C2`
+        # per vz-risk/VERIS issue # 383
+        if 'malware' in incident.get('action', {}):
+            if ('C2' in incident['action']['malware'].get('variety', []) or \
+            'Backdoor' in incident['action']['malware'].get('variety', [])) and \
+            'Backdoor or C2' not in incident['action']['malware'].get('variety', []) and \
+            LooseVersion(incident['schema_version']) >= LooseVersion("1.3.6"):
+                incident['action']['malware']['variety'].append('Backdoor or C2')
+
+        ### Validate that secondary.victim.amount is > 0 if victim.secondary.victim_id is not empty
+        ### VERIS issue #407
+        secondary_victims = incident.get('victim', {}).get('secondary', {}).get('victim_id', [])
+        secondary_victim_amount = incident.get('victim', {}).get('secondary', {}).get('amount', 0)
+        if secondary_victim_amount < 0: # I can't believe someone would make this negative, but just in case....
+            secondary_victim_amount == 0
+            incident['victim']['secondary']['amount'] == 0
+        if len(secondary_victims) > secondary_victim_amount:
+            incident['victim']['secondary']['amount'] = len(secondary_victims)
+
+
+        ### Check value_chain enumerations that are likely based on actions taken
+        ### VERIS issue #400
+        add_any_value_chain = False
+        if 'Phishing' in incident['action'].get('social', {}).get('variety', []):
+            add_value_chain = False
+            if 'value_chain' not in incident:
+                incident['value_chain'] = {'targeting': {'variety': ['Email addresses']}}
+                add_value_chain = True
+            elif 'targeting' not in incident['value_chain']:
+                incident['value_chain']['targeting'] = {'variety': ['Email addresses']}
+                add_value_chain = True
+            elif 'variety' not in incident['value_chain']['targeting']:
+                incident['value_chain']['targeting']['variety'] = ['Email addresses']
+                add_value_chain = True
+            elif 'Email addresses' not in incident['value_chain']['targeting']['variety']:
+                incident['value_chain']['targeting']['variety'].append("Email addresses")
+                add_value_chain = True
+            if add_value_chain:
+                add_any_value_chain = True
+                notes = incident['value_chain']['targeting'].get('notes', "")
+                incident['value_chain']['targeting']['notes'] = (notes + "\n" + "VERIS 1.3.6: value_chain.targeting.variety.Email addresses added because action.social.vector.Email exists.").strip()
+            add_value_chain = False
+            if 'value_chain' not in incident:
+                incident['value_chain'] = {'development': {'variety': ['Email']}}
+                add_value_chain = True
+            elif 'development' not in incident['value_chain']:
+                incident['value_chain']['development'] = {'variety': ['Email']}
+                add_value_chain = True
+            elif 'variety' not in incident['value_chain']['development']:
+                incident['value_chain']['development']['variety'] = ['Email']
+                add_value_chain = True
+            elif 'Email' not in incident['value_chain']['development']['variety']:
+                incident['value_chain']['development']['variety'].append("Email")
+                add_value_chain = True
+            if add_value_chain:
+                add_any_value_chain = True
+                notes = incident['value_chain']['development'].get('notes', "")
+                incident['value_chain']['development']['notes'] = (notes + "\n" + "VERIS 1.3.6: value_chain.development.variety.Email added because action.social.vector.Email exists.").strip()
+        if 'C2' in incident['action'].get('malware', {}).get('vector', []):
+            add_value_chain = False
+            if 'value_chain' not in incident:
+                incident['value_chain'] = {'non-distribution services': {'variety': ['C2']}}
+                add_value_chain = True
+            elif 'non-distribution services' not in incident['value_chain']:
+                incident['value_chain']['non-distribution services'] = {'variety': ['C2']}
+                add_value_chain = True
+            elif 'variety' not in incident['value_chain']['non-distribution services']:
+                incident['value_chain']['non-distribution services']['variety'] = ['C2']
+                add_value_chain = True
+            elif 'C2' not in incident['value_chain']['non-distribution services']['variety']:
+                incident['value_chain']['non-distribution services']['variety'].append("C2")
+                add_value_chain = True
+            if add_value_chain:
+                add_any_value_chain = True
+                notes = incident['value_chain']['non-distribution services'].get('notes', "")
+                incident['value_chain']['non-distribution services']['notes'] = (notes + "\n" + "VERIS 1.3.6: value_chain.non-distribution services.variety.C2 added because action.malware.vector.C2 exists.").strip()
+        if 'Ransomware' in incident['action'].get('malware', {}).get('variety', []):
+            add_value_chain = False
+            if 'value_chain' not in incident:
+                incident['value_chain'] = {'cash-out': {'variety': ['Cryptocurrency']}}
+                add_value_chain = True
+            elif 'cash-out' not in incident['value_chain']:
+                incident['value_chain']['cash-out'] = {'variety': ['Cryptocurrency']}
+                add_value_chain = True
+            elif 'variety' not in incident['value_chain']['cash-out']:
+                incident['value_chain']['cash-out']['variety'] = ['Cryptocurrency']
+                add_value_chain = True
+            elif 'Cryptocurrency' not in incident['value_chain']['cash-out']['variety']:
+                incident['value_chain']['cash-out']['variety'].append("Cryptocurrency")
+                add_value_chain = True
+            if add_value_chain:
+                add_any_value_chain = True
+                notes = incident['value_chain']['cash-out'].get('notes', "")
+                incident['value_chain']['cash-out']['notes'] = (notes + "\n" + "VERIS 1.3.6: value_chain.development.variety.Cryptocurrency added because action.malware.variety.Ransomware exists.").strip()
+### This is a recommend only rule.
+#        if 'Trojan' in incident['action'].get('malware', {}).get('variety', []):
+#            add_value_chain = False
+#            if 'value_chain' not in incident:
+#                incident['value_chain'] = {'development': {'variety': ['Trojan']}}
+#                add_value_chain = True
+#            elif 'development' not in incident['value_chain']:
+#                incident['value_chain']['development'] = {'variety': ['Trojan']}
+#                add_value_chain = True
+#            elif 'variety' not in incident['value_chain']['development']:
+#                incident['value_chain']['development']['variety'] = ['Trojan']
+#                add_value_chain = True
+#            elif 'Trojan' not in incident['value_chain']['development']['variety']:
+#                incident['value_chain']['development']['variety'].append("Trojan")
+#                add_value_chain = True
+#            if add_value_chain:
+#                notes = incident['value_chain']['development'].get('notes', "")
+#                incident['value_chain']['development']['notes'] = (notes + "\n" + "VERIS 1.3.6: value_chain.development.variety.Trojan added because action.malware.variety.Trojan exists.").strip()
+        if 'Email' in incident['action'].get('social', {}).get('vector', []):
+            add_value_chain = False
+            if 'value_chain' not in incident:
+                incident['value_chain'] = {'distribution': {'variety': ['Email']}}
+                add_value_chain = True
+            elif 'distribution' not in incident['value_chain']:
+                incident['value_chain']['distribution'] = {'variety': ['Email']}
+                add_value_chain = True
+            elif 'variety' not in incident['value_chain']['distribution']:
+                incident['value_chain']['distribution']['variety'] = ['Email']
+                add_value_chain = True
+            elif 'Email' not in incident['value_chain']['distribution']['variety']:
+                incident['value_chain']['distribution']['variety'].append("Email")
+                add_value_chain = True
+            if add_value_chain:
+                add_any_value_chain = True
+                notes = incident['value_chain']['distribution'].get('notes', "")
+                incident['value_chain']['distribution']['notes'] = (notes + "\n" + "VERIS 1.3.6: value_chain.distribution.variety.Email added because action.social.vector.Email exists.").strip()
+            if add_any_value_chain and incident.get('value_chain', {}).get('NA', False):
+                if 'value_chain' not in incident:
+                    incident['value_chain'] = {'NA': False}
+                else:
+                    incident['value_chain']['NA'] = False
+
+
 
         return incident
 
